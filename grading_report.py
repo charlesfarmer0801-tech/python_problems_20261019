@@ -107,8 +107,8 @@ def build_report(xml_path, selection_path):
         total += score
         lines.append(f"| {_safe_markdown(title)} | {passed}/{len(records)} | {score:.1f}/10 |")
 
-    lines += ["", f"**Submitted score: {total:.1f}/{len(selected)*10} points**", "",
-              "Unchanged problems are not counted as zero.", "",
+    lines += ["", f"**Current submission: {total:.1f}/{len(selected)*10} points**", "",
+              "For overall progress out of 100, see the grading comment on the pull request.", "",
               "---", ""]
 
     for filename in selected:
@@ -140,11 +140,61 @@ def build_report(xml_path, selection_path):
     return "\n".join(lines) + "\n", annotations
 
 
+
+def write_pr_artifact(xml_path, selection_path, report):
+    """Export a small, validated data file for a separate PR-comment workflow."""
+    if not (xml_path.exists() and selection_path.exists()):
+        return
+    try:
+        selection = json.loads(selection_path.read_text(encoding="utf-8"))
+        root = ET.parse(xml_path).getroot()
+    except (ValueError, OSError, ET.ParseError):
+        return
+
+    if (not isinstance(selection, list) or not selection
+            or len(selection) != len(set(selection))
+            or any(name not in PROBLEMS for name in selection)):
+        return
+
+    counts = {PROBLEMS[name][1]: [0, 0] for name in selection}
+    for case in root.iter("testcase"):
+        match = re.search(r"test_(\d{2})_", case.get("classname", ""))
+        if not match:
+            continue
+        number = int(match.group(1))
+        if number not in counts:
+            continue
+        counts[number][1] += 1
+        if _status(case)[0] == "passed":
+            counts[number][0] += 1
+
+    # A pytest collection error still counts as zero for the submitted problem.
+    # But if there is no XML at all (infrastructure failure), don't replace scores.
+    scores = {
+        name: round(10 * counts[PROBLEMS[name][1]][0] /
+                    counts[PROBLEMS[name][1]][1], 6)
+        if counts[PROBLEMS[name][1]][1] else 0
+        for name in selection
+    }
+    target = Path("grading-feedback")
+    target.mkdir(exist_ok=True)
+    data = {
+        "version": 1,
+        "pr_number": int(os.environ.get("GRADE_PR_NUMBER", "0")),
+        "head_sha": os.environ.get("GRADE_HEAD_SHA", ""),
+        "scores": scores,
+    }
+    (target / "grade.json").write_text(
+        json.dumps(data, sort_keys=True), encoding="utf-8"
+    )
+    (target / "details.md").write_text(report[:30000], encoding="utf-8")
+
 def main():
     xml_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("results.xml")
     selection_path = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("grading_selection.json")
     report, annotations = build_report(xml_path, selection_path)
     print(report)
+    write_pr_artifact(xml_path, selection_path, report)
     summary_path = os.getenv("GITHUB_STEP_SUMMARY")
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as handle:
