@@ -8,7 +8,7 @@ from importlib import import_module
     (35, 0, 35),
     (35, 100, 0),
     (125, 15, 106.25),
-])
-def test_discount(price,discount,expected):
+], ids=["half-off","twenty-percent-off","seventy-five-percent-off","zero-discount","full-discount","fifteen-percent-off"])
+def test_discount(price,discount,expected, verify_output):
     func = import_module('find_the_discount').dis
-    assert func(price,discount) == pytest.approx(expected)
+    verify_output(func(price,discount), expected)

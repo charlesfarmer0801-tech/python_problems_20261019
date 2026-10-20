@@ -9,7 +9,7 @@ from importlib import import_module
     ('', 0),
     ('Education', 5),
     ('beautiful day', 6),
-])
-def test_count_vowels(text,expected):
+], ids=["lowercase-word","mixed-case-word","uppercase-vowels","no-vowels","empty-string","mixed-case-vowels","sentence-with-space"])
+def test_count_vowels(text,expected, verify_output):
     func = import_module('how_many_vowels').count_vowels
-    assert func(text) == expected
+    verify_output(func(text), expected)

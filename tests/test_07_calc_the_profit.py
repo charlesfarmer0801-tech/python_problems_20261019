@@ -7,7 +7,7 @@ from importlib import import_module
     ({'cost_price': 20.0, 'sell_price': 15.0, 'inventory': 3}, -15),
     ({'cost_price': 1.0, 'sell_price': 1.0, 'inventory': 100}, 0),
     ({'cost_price': 5.75, 'sell_price': 6.25, 'inventory': 10}, 5),
-])
-def test_profit(details,expected):
+], ids=["standard-profit","zero-cost","negative-profit","break-even","fractional-profit"])
+def test_profit(details,expected, verify_output):
     func = import_module('calc_the_profit').profit
-    assert func(details) == expected
+    verify_output(func(details), expected)

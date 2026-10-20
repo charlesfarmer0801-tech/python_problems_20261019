@@ -1,7 +1,4 @@
-"""Score only the problems submitted in the current pull request.
-
-Every changed assignment is worth 10 points, divided among its pytest cases.
-"""
+"""Student-friendly pass/fail and grading feedback for submitted assignments."""
 import json
 import os
 import re
@@ -23,83 +20,139 @@ PROBLEMS = {
 }
 
 
+def _safe_markdown(value):
+    return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+
+def _status(test):
+    for key in ("failure", "error", "skipped"):
+        node = test.find(key)
+        if node is not None:
+            return key, node
+    return "passed", None
+
+
+def _friendly_case(name):
+    bracket = re.search(r"\[([^\]]+)\]$", name)
+    if bracket:
+        return bracket.group(1).replace("-", " ").capitalize()
+    return name.replace("_", " ").capitalize()
+
+
+def _feedback(node):
+    text = (node.get("message", "") or (node.text or "")).strip()
+    if not text:
+        return "The test could not complete. Open the test log for details."
+    text = re.sub(r"^(?:AssertionError|Failed):\s*", "", text)
+    # Don't show the student's entire traceback in the friendly report.
+    if "\n" in text and not text.startswith("Expected:"):
+        text = text.splitlines()[0]
+    return text[:700]
+
+
+def _annotation(filename, title, message):
+    # Escape GitHub Actions workflow command separators and newlines.
+    def escape(value):
+        return (str(value).replace("%", "%25").replace("\r", "%0D")
+                .replace("\n", "%0A").replace(":", "%3A"))
+    print(f"::error file={escape(filename)},title={escape(title)}::{escape(message[:400])}")
+
+
 def build_report(xml_path, selection_path):
     if not selection_path.exists():
-        return "## Python grading results\n\nCould not determine which assignment files changed. Check the job logs.\n"
-
+        return "## Python grading results\n\nCould not identify changed assignment files. Review the workflow logs.\n", []
     try:
-        selection = json.loads(selection_path.read_text(encoding="utf-8"))
-        if not isinstance(selection, list) or any(f not in PROBLEMS for f in selection):
-            raise ValueError("Invalid assignment selection")
-    except (ValueError, OSError) as exc:
-        return f"## Python grading results\n\nCould not read the assignment selection: {exc}\n"
+        selected = json.loads(selection_path.read_text(encoding="utf-8"))
+        if not isinstance(selected, list) or any(name not in PROBLEMS for name in selected):
+            raise ValueError("Invalid assignment file list")
+    except (OSError, ValueError) as exc:
+        return f"## Python grading results\n\nCould not read selected assignments: {exc}\n", []
 
-    if not selection:
+    if not selected:
         return (
-            "## Python grading results\n\n"
-            "**No assignment files were changed.** "
-            "Modify an existing assignment .py file to submit a solution.\n"
-        )
+            "## Python grading results\n\nNo assignment Python files changed. "
+            "Submit edits to one or more existing assignment files.\n"
+        ), []
 
     if not xml_path.exists():
-        return (
-            "## Python grading results\n\n"
-            "Tests did not produce results. Review the workflow logs. "
-            f"Expected tests for: {', '.join(selection)}.\n"
-        )
-
+        return "## Python grading results\n\nTests did not generate results. Check the workflow logs.\n", []
     try:
         root = ET.parse(xml_path).getroot()
     except ET.ParseError as exc:
-        return f"## Python grading results\n\nInvalid test results XML: {exc}\n"
+        return f"## Python grading results\n\nTest results could not be parsed: {exc}\n", []
 
-    counts = {PROBLEMS[name][1]: [0, 0] for name in selection}
-    for case in root.iter("testcase"):
-        match = re.search(r"test_(\d{2})_", case.get("classname", ""))
-        if not match:
+    cases = {PROBLEMS[name][1]: [] for name in selected}
+    for node in root.iter("testcase"):
+        match = re.search(r"test_(\d{2})_", node.get("classname", ""))
+        if not match or int(match.group(1)) not in cases:
             continue
         number = int(match.group(1))
-        if number not in counts:
-            continue
-        counts[number][1] += 1
-        if not any(case.find(tag) is not None for tag in ("failure", "error", "skipped")):
-            counts[number][0] += 1
+        status, error = _status(node)
+        cases[number].append((node.get("name", "test"), status, error))
 
     lines = [
-        "## Python grading results",
+        "## Python grading results", "",
+        "Only the assignment files changed in this pull request are graded.",
         "",
-        "Only assignment files changed in this pull request are graded.",
-        "",
-        "| Submitted problem | Tests passed | Score |",
+        "| Submitted problem | Passed / Tested | Score |",
         "|---|---:|---:|",
     ]
+    annotations = []
     total = 0.0
-    for filename in selection:
-        name, number = PROBLEMS[filename]
-        passed, tested = counts[number]
-        points = (10 * passed / tested) if tested else 0
-        total += points
-        lines.append(f"| {name} ({filename}) | {passed}/{tested} | {points:.1f}/10 |")
+    for filename in selected:
+        title, number = PROBLEMS[filename]
+        records = cases[number]
+        passed = sum(status == "passed" for _, status, _ in records)
+        score = 10 * passed / len(records) if records else 0
+        total += score
+        lines.append(f"| {_safe_markdown(title)} | {passed}/{len(records)} | {score:.1f}/10 |")
 
-    maximum = 10 * len(selection)
-    lines.extend([
-        "",
-        f"**Submitted score: {total:.1f}/{maximum} points**",
-        "",
-        "Unchanged assignment files are not graded or counted as zero.",
-        "Scores reflect automated tests only; instructor review may adjust the grade.",
-    ])
-    return "\n".join(lines) + "\n"
+    lines += ["", f"**Submitted score: {total:.1f}/{len(selected)*10} points**", "",
+              "Unchanged problems are not counted as zero.", "",
+              "---", ""]
+
+    for filename in selected:
+        title, number = PROBLEMS[filename]
+        records = cases[number]
+        lines += [f"### {title}", "", "| Test case | Result |", "|---|---|"]
+        if not records:
+            lines.append("| Tests could not be collected | ❌ Check workflow logs |")
+        for name, status, _ in records:
+            icon = "✅ Passed" if status == "passed" else ("⚪ Skipped" if status == "skipped" else "❌ Failed")
+            lines.append(f"| {_safe_markdown(_friendly_case(name))} | {icon} |")
+        lines.append("")
+        for name, status, problem in records:
+            if status not in ("failure", "error"):
+                continue
+            label = _friendly_case(name)
+            explanation = _feedback(problem)
+            lines.append(f"**❌ {label}**")
+            lines.append("")
+            for line in explanation.splitlines():
+                if line.strip():
+                    lines.append("> " + _safe_markdown(line))
+            lines += ["", ""]
+            annotations.append((filename, f"{title}: {label}", " | ".join(explanation.splitlines())))
+        if not records:
+            annotations.append((filename, title, "No tests were collected. Review the test runner logs."))
+
+    lines += ["", "*These results are automated checks, not a replacement for instructor review.*"]
+    return "\n".join(lines) + "\n", annotations
 
 
 def main():
     xml_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("results.xml")
     selection_path = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("grading_selection.json")
-    report = build_report(xml_path, selection_path)
+    report, annotations = build_report(xml_path, selection_path)
     print(report)
-    if os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as file:
-            file.write(report)
+    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with open(summary_path, "a", encoding="utf-8") as handle:
+            handle.write(report)
+    for filename, title, message in annotations[:20]:
+        _annotation(filename, title, message)
+    if len(annotations) > 20:
+        print(f"Additional failed tests: {len(annotations)-20}. See the full job summary.")
 
 
 if __name__ == "__main__":

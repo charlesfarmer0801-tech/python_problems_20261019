@@ -9,9 +9,9 @@ from importlib import import_module
     ('Narnia', 0),
     ('World', 148_940_000),
     ('Japan', 377_975),
-])
-def test_area_of_country(country,area):
+], ids=["russia","united-states","australia","zero-area","full-world-area","japan"])
+def test_area_of_country(country,area, verify_output):
     func = import_module('country_area').area_of_country
     percentage = round(area / 148_940_000 * 100, 2)
     expected = f"{country} is {percentage}% of the total world's landmass"
-    assert func(country,area) == expected
+    verify_output(func(country,area), expected)

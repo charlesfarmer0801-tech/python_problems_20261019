@@ -9,7 +9,7 @@ from importlib import import_module
     (1, 3, False),
     (0, 9, False),
     (3, 16, True),
-])
-def test_circle_or_square(radius,square_area,expected):
+], ids=["circle-larger","square-larger","circle-larger-case-two","square-larger-case-two","zero-radius","circle-larger-case-three"])
+def test_circle_or_square(radius,square_area,expected, verify_output):
     func = import_module('circle_or_square').circle_or_square
-    assert func(radius,square_area) is expected
+    verify_output(func(radius,square_area), expected)

@@ -11,7 +11,7 @@ from importlib import import_module
     (2.5, '*', 4, 10),
     (3, '/', 2, 1.5),
     (9, '/', 0, "Can't divide by 0!"),
-])
-def test_calculator(num1,operator,num2,expected):
+], ids=["add","subtract","multiply","divide-evenly","add-negative","subtract-larger-number","multiply-decimals","division-with-fraction","division-by-zero"])
+def test_calculator(num1,operator,num2,expected, verify_output):
     func = import_module('basic_calculator').calculator
-    assert func(num1,operator,num2) == expected
+    verify_output(func(num1,operator,num2), expected)

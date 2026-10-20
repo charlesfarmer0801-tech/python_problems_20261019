@@ -8,7 +8,7 @@ from importlib import import_module
     (3, 1, [3]),
     (4, 4, [4,8,12,16]),
     (1, 7, [1,2,3,4,5,6,7]),
-])
-def test_list_of_multiples(number,length,expected):
+], ids=["first-five-multiples","ten-multiples","six-multiples","single-multiple","four-multiples","multiples-of-one"])
+def test_list_of_multiples(number,length,expected, verify_output):
     func = import_module('list_of_multiples').list_of_multiples
-    assert func(number,length) == expected
+    verify_output(func(number,length), expected)

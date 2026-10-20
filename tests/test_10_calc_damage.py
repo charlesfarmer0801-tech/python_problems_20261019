@@ -10,7 +10,7 @@ from importlib import import_module
     (-23, 20, 'second', 'invalid'),
     (20, -2, 'hour', 'invalid'),
     (0, 10, 'minute', 0),
-])
-def test_damage(damage,speed,time,expected):
+], ids=["per-second","per-minute","per-hour","fractional-speed","large-hourly-damage","negative-damage","negative-speed","zero-damage"])
+def test_damage(damage,speed,time,expected, verify_output):
     func = import_module('calc_damage').damage
-    assert func(damage,speed,time) == expected
+    verify_output(func(damage,speed,time), expected)

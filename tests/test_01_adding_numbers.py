@@ -10,7 +10,7 @@ from importlib import import_module
     ('', '7', 'Invalid Operation'),
     (None, '5', 'Invalid Operation'),
     ('2', None, 'Invalid Operation'),
-])
-def test_add(n1, n2, expected):
+], ids=["positive-numbers","positive-and-negative","integer-inputs","two-negative-numbers","adding-zero","empty-first-input","none-first-input","none-second-input"])
+def test_add(n1, n2, expected, verify_output):
     add = import_module('adding_numbers').add
-    assert add(n1, n2) == expected
+    verify_output(add(n1, n2), expected)
